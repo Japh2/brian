@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en"
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Brian's Run</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            background-color: #1a1a2e;
+            color: gold;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+        }
+
+        h1 {
+            color: #4ade80;
+            margin-bottom: 10px;
+            letter-spacing: 2px;
+        }
+
+        canvas {
+            background-color: #0f0f1a;
+            border: 2px solid #4ade80;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(74, 222, 128, 0.2);
+            max-width: 95vw;
+        }
+
+        .controls {
+            margin-top: 20px;
+            font-size: 1.1rem;
+            color: #9ca3af;
+        }
+
+        .controls span {
+            color: #4ade80;
+            font-weight: bold;
+        }
+
+        /* Game Over Overlay */
+        #game-over {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8);
+            padding: 30px 50px;
+            border: 2px solid #4ade80;
+            border-radius: 15px;
+            text-align: center;
+            display: none;
+            z-index: 10;
+        }
+
+        #game-over h2 {
+            color: #ef4444;
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        #game-over p {
+            color: white;
+            margin-bottom: 20px;
+            font-size: 1.2rem;
+        }
+
+        #game-over button {
+            background: #4ade80;
+            color: #000;
+            border: none;
+            padding: 10px 30px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        #game-over button:hover {
+            transform: scale(1.1);
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Brian's Run</h1>
+    
+    <canvas id="gameCanvas" width="800" height="300"></canvas>
+    
+    <div class="controls">
+        Press <span>F1</span> or <span>UP ARROW</span> to jump. Tap screen on mobile.
+    </div>
+
+    <div id="game-over">
+        <h2>Game Over</h2>
+        <p>Brian tripped. Final Score: <span id="final-score">0</span></p>
+        <button onclick="resetGame()">Try Again</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const gameOverScreen = document.getElementById('game-over');
+        const finalScoreEl = document.getElementById('final-score');
+
+        // Game Variables
+        let gameLoop;
+        let isGameOver = false;
+        let score = 0;
+        let speed = 6;
+        let frameCount = 0;
+
+        // Brian (The Runner)
+        const brian = {
+            x: 50,
+            y: 250, // Ground level
+            width: 20,
+            height: 40,
+            vy: 0, // Vertical velocity
+            gravity: 0.9,
+            jumpPower: -20,
+            isJumping: false,
+            // For stick figure animation
+            legFrame: 0 
+        };
+
+        // Obstacles
+        let obstacles = [];
+
+        // --- CONTROLS ---
+        function jump() {
+            if (!brian.isJumping && !isGameOver) {
+                brian.vy = brian.jumpPower;
+                brian.isJumping = true;
+            }
+        }
+
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'Space' || e.code === 'ArrowUp') {
+                e.preventDefault(); // Prevent page scroll
+                jump();
+            }
+        });
+
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            jump();
+        });
+
+        // --- GAME LOGIC ---
+        function spawnObstacle() {
+            // Randomize obstacle height and width
+            const width = Math.random() * 20 + 15;
+            const height = Math.random() * 30 + 20;
+            
+            obstacles.push({
+                x: canvas.width,
+                y: canvas.height - height,
+                width: width,
+                height: height,
+                color: '#ef4444' // Red obstacles
+            });
+        }
+
+        function drawBrian() {
+            ctx.fillStyle = '#4ade80';
+            ctx.strokeStyle = '#4ade80';
+            ctx.lineWidth = 3;
+            ctx.lineCap = 'round';
+
+            // Calculate current Y (jump)
+            const currentY = brian.y - brian.height;
+
+            // Head
+            ctx.beginPath();
+            ctx.arc(brian.x + 10, currentY + 10, 10, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Body
+            ctx.beginPath();
+            ctx.moveTo(brian.x + 10, currentY + 20);
+            ctx.lineTo(brian.x + 10, currentY + 35);
+            ctx.stroke();
+
+            // Arms & Legs based on animation frame
+            if (brian.isJumping) {
+                // Jumping pose
+                ctx.beginPath();
+                ctx.moveTo(brian.x + 10, currentY + 25);
+                ctx.lineTo(brian.x - 5, currentY + 15); // Left arm up
+                ctx.moveTo(brian.x + 10, currentY + 25);
+                ctx.lineTo(brian.x + 25, currentY + 15); // Right arm up
+                ctx.moveTo(brian.x + 10, currentY + 35);
+                ctx.lineTo(brian.x, currentY + 45); // Legs tucked
+                ctx.moveTo(brian.x + 10, currentY + 35);
+                ctx.lineTo(brian.x + 20, currentY + 45);
+                ctx.stroke();
+            } else {
+                // Running pose
+                const legOffset = Math.sin(frameCount * 0.2) * 10;
+                
+                // Arms
+                ctx.beginPath();
+                ctx.moveTo(brian.x + 10, currentY + 25);
+                ctx.lineTo(brian.x + 10 - legOffset, currentY + 35); 
+                ctx.moveTo(brian.x + 10, currentY + 25);
+                ctx.lineTo(brian.x + 10 + legOffset, currentY + 35);
+                ctx.stroke();
+
+                // Legs
+                ctx.beginPath();
+                ctx.moveTo(brian.x + 10, currentY + 35);
+                ctx.lineTo(brian.x + 10 - legOffset, currentY + 50);
+                ctx.moveTo(brian.x + 10, currentY + 35);
+                ctx.lineTo(brian.x + 10 + legOffset, currentY + 50);
+                ctx.stroke();
+            }
+        }
+
+        function update() {
+            if (isGameOver) return;
+
+            frameCount++;
+            
+            // Increase speed over time
+            if (frameCount % 500 === 0) {
+                speed += 0.5;
+            }
+
+            // Apply Gravity to Brian
+            brian.vy += brian.gravity;
+            brian.y += brian.vy;
+
+            // Ground Collision
+            if (brian.y > 250) {
+                brian.y = 250;
+                brian.vy = 0;
+                brian.isJumping = false;
+            }
+
+            // Spawn Obstacles
+            if (frameCount % Math.max(40, 100 - speed * 5) === 0) {
+                spawnObstacle();
+            }
+
+            // Update Obstacles & Collision Detection
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                let obs = obstacles[i];
+                obs.x -= speed;
+
+                // Remove offscreen obstacles
+                if (obs.x + obs.width < 0) {
+                    obstacles.splice(i, 1);
+                    score += 10;
+                    continue;
+                }
+
+                // Collision Check (Hitbox logic)
+                // Brian's hitbox is slightly smaller than his visual to be forgiving
+                const brianHitbox = {
+                    x: brian.x + 5,
+                    y: brian.y - brian.height + 15,
+                    w: brian.width - 5,
+                    h: brian.height - 10
+                };
+
+                if (
+                    brianHitbox.x < obs.x + obs.width &&
+                    brianHitbox.x + brianHitbox.w > obs.x &&
+                    brianHitbox.y < obs.y + obs.height &&
+                    brianHitbox.y + brianHitbox.h > obs.y
+                ) {
+                    endGame();
+                }
+            }
+        }
+
+        function draw() {
+            // Clear screen
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw Ground
+            ctx.beginPath();
+            ctx.moveTo(0, 250);
+            ctx.lineTo(canvas.width, 250);
+            ctx.strokeStyle = '#374151';
+            ctx.lineWidth = 4;
+            ctx.stroke();
+
+            // Draw Brian
+            drawBrian();
+
+            // Draw Obstacles
+            obstacles.forEach(obs => {
+                ctx.fillStyle = obs.color;
+                ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
+                // Add a little glow
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = obs.color;
+                ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
+                ctx.shadowBlur = 0; // reset
+            });
+
+            // Draw Score
+            ctx.fillStyle = 'white';
+            ctx.font = '20px monospace';
+            ctx.fillText('Score: ' + score, 20, 40);
+            ctx.fillText('Speed: ' + speed.toFixed(1), 20, 70);
+        }
+
+        function gameStep() {
+            update();
+            draw();
+            if (!isGameOver) {
+                gameLoop = requestAnimationFrame(gameStep);
+            }
+        }
+
+        function endGame() {
+            isGameOver = true;
+            cancelAnimationFrame(gameLoop);
+            finalScoreEl.innerText = score;
+            gameOverScreen.style.display = 'block';
+        }
+
+        function resetGame() {
+            isGameOver = false;
+            score = 0;
+            speed = 6;
+            frameCount = 0;
+            brian.y = 250;
+            brian.vy = 0;
+            brian.isJumping = false;
+            obstacles = [];
+            gameOverScreen.style.display = 'none';
+            gameStep();
+        }
+
+        // Start game
+        gameStep();
+
+    </script>
+</body>
+</html>
